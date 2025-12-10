@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GO Feature Flag: Architecture & API Reference</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        html { scroll-behavior: smooth; }
+        
+        /* Diagram Styles */
+        .diagram-arrow {
+            position: relative;
+            background: #cbd5e1;
+            height: 2px;
+        }
+        .diagram-arrow::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: -4px;
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent;
+            border-left: 5px solid #cbd5e1;
+        }
+        .skew-pattern {
+            background-color: #f8fafc;
+            background-image: repeating-linear-gradient(45deg, #f1f5f9 25%, transparent 25%, transparent 75%, #f1f5f9 75%, #f1f5f9), repeating-linear-gradient(45deg, #f1f5f9 25%, #f8fafc 25%, #f8fafc 75%, #f1f5f9 75%, #f1f5f9);
+            background-position: 0 0, 10px 10px;
+            background-size: 20px 20px;
+        }
+        .connector-line {
+            border-left: 2px dashed #cbd5e1;
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            z-index: 0;
+        }
+
+        /* API Doc Styles */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+        .method-get { color: #3b82f6; background: #eff6ff; border: 1px solid #dbeafe; }
+        .method-post { color: #10b981; background: #ecfdf5; border: 1px solid #d1fae5; }
+        .method-ws { color: #9333ea; background: #f3e8ff; border: 1px solid #e9d5ff; }
+        
+        pre code.hljs { padding: 1.5em; border-radius: 0.5rem; font-size: 0.875rem; line-height: 1.5; }
+
+        @media print {
+            body, html, main {
+                height: auto !important;
+                overflow: visible !important;
+                width: 100% !important;
+                display: block !important;
+                position: static !important;
+            }
+            main { padding: 0 !important; margin: 0 !important; }
+            .max-w-4xl { max-width: none !important; padding: 20px !important; }
+            pre { white-space: pre-wrap !important; border: 1px solid #ddd; page-break-inside: avoid; }
+            section, .mb-12, .mb-16 { page-break-inside: avoid; }
+            body { background-color: white; color: black; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
+
+    <!-- Navigation / Header -->
+    <nav class="bg-slate-900 text-white sticky top-0 z-50 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <i class="fa-solid fa-flag text-blue-400 text-xl"></i>
+                    <span class="font-bold text-lg tracking-tight">GO Feature Flag</span>
+                </div>
+                <div class="text-sm text-slate-400 font-medium">Architecture & API Reference</div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
+        
+        <!-- ========================================== -->
+        <!-- ARCHITECTURE SECTION (from drawbacks.html) -->
+        <!-- ========================================== -->
+        
+        <section id="architecture">
+            <!-- Intro Section -->
+            <div class="mb-16 text-center">
+                <h1 class="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">
+                    Relay Proxy & High Availability
+                </h1>
+                <p class="text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
+                    Why a standard multi-replica HA setup conflicts with the stateless, in-memory design of the GO Feature Flag Relay Proxy.
+                </p>
+            </div>
+
+            <!-- The Core Concept -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-12 relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-10 -mt-10 z-0"></div>
+                <div class="relative z-10">
+                    <div class="flex items-start gap-4">
+                        <div class="p-3 bg-blue-100 rounded-lg text-blue-600 mt-1">
+                            <i class="fa-solid fa-memory text-xl"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-900 mb-2">Stateless by Design</h2>
+                            <p class="text-slate-600 leading-relaxed">
+                                The Relay Proxy is designed to be lightweight and fast. It loads your configuration file (from S3, GitHub, etc.) directly into an 
+                                <span class="font-semibold text-slate-800">in-memory cache</span>. It does not share state with other instances.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- The Problem Section -->
+            <section class="mb-16">
+                <div class="flex items-center gap-3 mb-8">
+                    <div class="h-8 w-1 bg-red-500 rounded-full"></div>
+                    <h2 class="text-2xl font-bold text-slate-900">The Problem with Centralized HA</h2>
+                </div>
+                
+                <p class="text-slate-600 mb-8 leading-relaxed">
+                    Running 2 or more replicas behind a load balancer introduces critical issues because each replica maintains its own isolated version of the truth.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- Problem 1: Percentage Rollouts -->
+                    <div class="col-span-1 md:col-span-2 bg-white rounded-xl shadow-sm border border-red-100 p-6">
+                        <h3 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-dice text-red-500"></i>
+                            1. Percentage Rollouts Break
+                        </h3>
+                        <p class="text-slate-600 mb-6">
+                            This is the most critical failure. Evaluation results for percentage rollouts are cached <strong>locally in memory</strong> to ensure consistency for a user. In an HA setup, separate pods have separate caches (Split Brain).
+                        </p>
+
+                        <!-- Improved Split Brain Diagram -->
+                        <div class="bg-slate-50 rounded-lg p-8 border border-slate-200 relative overflow-hidden">
+                            
+                            <!-- Timeline Layout -->
+                            <div class="grid grid-cols-12 gap-4 relative z-10">
+                                
+                                <!-- User Column -->
+                                <div class="col-span-2 flex flex-col items-center justify-center border-r border-slate-200 pr-4">
+                                    <div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center text-white shadow-md mb-2">
+                                        <i class="fa-solid fa-user text-lg"></i>
+                                    </div>
+                                    <span class="font-mono font-bold text-slate-700 text-sm">User1</span>
+                                </div>
+
+                                <!-- Interaction Column -->
+                                <div class="col-span-10 flex flex-col gap-6">
+                                    
+                                    <!-- Interaction 1: Hit Pod A -->
+                                    <div class="flex items-center gap-4 group">
+                                        <div class="flex-1 text-right">
+                                            <div class="text-xs font-bold text-slate-400 mb-1">REQUEST 1</div>
+                                            <div class="h-[2px] bg-blue-300 w-full relative">
+                                                <i class="fa-solid fa-caret-right absolute -right-1 -top-[5px] text-blue-300"></i>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="w-64 bg-white p-4 rounded-lg border-2 border-green-200 shadow-sm relative">
+                                            <span class="absolute -top-3 left-3 bg-green-50 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded border border-green-100 uppercase tracking-wide">Pod A (Replica 1)</span>
+                                            <div class="flex items-center justify-between mb-2 mt-1">
+                                                <div class="text-xs text-slate-500"><i class="fa-solid fa-dice mr-1"></i> Roll: <span class="text-slate-800 font-bold">45%</span></div>
+                                                <div class="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded">TRUE</div>
+                                            </div>
+                                            <div class="border-t border-slate-100 pt-2 mt-2">
+                                                <div class="flex items-center gap-2 text-xs text-slate-400">
+                                                    <i class="fa-solid fa-memory text-green-500"></i>
+                                                    <span>Cached: User1 = TRUE</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Interaction 2: Hit Pod B -->
+                                    <div class="flex items-center gap-4 group">
+                                        <div class="flex-1 text-right">
+                                            <div class="text-xs font-bold text-slate-400 mb-1">REQUEST 2</div>
+                                            <div class="h-[2px] bg-red-300 w-full relative">
+                                                <i class="fa-solid fa-caret-right absolute -right-1 -top-[5px] text-red-300"></i>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="w-64 bg-white p-4 rounded-lg border-2 border-red-200 shadow-sm relative">
+                                            <span class="absolute -top-3 left-3 bg-red-50 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded border border-red-100 uppercase tracking-wide">Pod B (Replica 2)</span>
+                                            <div class="flex items-center justify-between mb-2 mt-1">
+                                                <div class="text-xs text-slate-500"><i class="fa-solid fa-dice mr-1"></i> Roll: <span class="text-slate-800 font-bold">55%</span></div> <!-- Different Roll -->
+                                                <div class="bg-red-100 text-red-800 text-xs font-bold px-2 py-1 rounded">FALSE</div>
+                                            </div>
+                                            <div class="border-t border-slate-100 pt-2 mt-2">
+                                                <div class="flex items-center gap-2 text-xs text-slate-400">
+                                                    <i class="fa-regular fa-square text-slate-300"></i>
+                                                    <span class="text-slate-400 italic">Cache Miss (No memory of User1)</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Summary Footer -->
+                            <div class="mt-6 mx-auto max-w-md bg-red-50 border border-red-100 rounded-lg p-3 flex items-center gap-3 shadow-sm">
+                                <i class="fa-solid fa-triangle-exclamation text-red-500 text-xl"></i>
+                                <div>
+                                    <span class="block font-bold text-red-900 text-sm">Inconsistent User Experience</span>
+                                    <span class="text-xs text-red-700">The user sees the feature turn ON then OFF randomly.</span>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- Problem 2: Notifiers -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+                            <i class="fa-regular fa-bell text-orange-500"></i>
+                            2. Notifier Duplication
+                        </h3>
+                        <p class="text-slate-600 text-sm mb-4">
+                            Notifiers (Slack, Webhooks, Email) trigger when a config change is detected.
+                        </p>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm">
+                            <div class="flex justify-center items-center gap-4 mb-2">
+                                <div class="flex flex-col gap-1">
+                                    <div class="w-8 h-8 bg-white border border-slate-300 rounded shadow-sm flex items-center justify-center"><i class="fa-solid fa-server text-slate-400 text-xs"></i></div>
+                                    <div class="w-8 h-8 bg-white border border-slate-300 rounded shadow-sm flex items-center justify-center"><i class="fa-solid fa-server text-slate-400 text-xs"></i></div>
+                                    <div class="w-8 h-8 bg-white border border-slate-300 rounded shadow-sm flex items-center justify-center"><i class="fa-solid fa-server text-slate-400 text-xs"></i></div>
+                                </div>
+                                <i class="fa-solid fa-arrow-right text-slate-400"></i>
+                                <div class="bg-white border border-slate-300 px-3 py-2 rounded shadow-sm flex flex-col gap-1">
+                                    <div class="text-xs text-slate-500">Slack Channel</div>
+                                    <div class="bg-blue-100 h-2 w-16 rounded"></div>
+                                    <div class="bg-blue-100 h-2 w-16 rounded"></div>
+                                    <div class="bg-blue-100 h-2 w-16 rounded"></div>
+                                </div>
+                            </div>
+                            <p class="text-slate-500 italic text-center">
+                                3 Replicas = 3 identical notifications for every change.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Problem 3: Consistency Skew -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+                            <i class="fa-solid fa-stopwatch text-purple-500"></i>
+                            3. Consistency Skew
+                        </h3>
+                        <p class="text-slate-600 text-sm mb-4">
+                            Relay proxies poll for changes based on a <code>PollingInterval</code>. Replicas are never perfectly synced.
+                        </p>
+                        <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm">
+                            <ul class="space-y-2">
+                                <li class="flex justify-between items-center">
+                                    <span class="font-mono text-slate-600">Pod 1</span>
+                                    <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">Config v2</span>
+                                </li>
+                                <li class="flex justify-between items-center opacity-75">
+                                    <span class="font-mono text-slate-600">Pod 2</span>
+                                    <span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">Config v2</span>
+                                </li>
+                                <li class="flex justify-between items-center">
+                                    <span class="font-mono text-slate-600">Pod 3</span>
+                                    <span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded text-xs">Config v1 (Lagging)</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sticky Sessions Explanation -->
+            <section class="mb-16">
+                <div class="bg-orange-50 border-l-4 border-orange-400 p-6 rounded-r-lg">
+                    <h3 class="text-lg font-bold text-orange-900 mb-2">What about Sticky Sessions?</h3>
+                    <p class="text-orange-800 mb-4 leading-relaxed">
+                        Configuring your Load Balancer for sticky sessions (session affinity) can ensure a user always hits the same pod, solving the percentage toggle issue. However, it is <strong>not recommended</strong> as a complete solution.
+                    </p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="bg-white/60 p-3 rounded">
+                            <span class="font-bold text-orange-900 block mb-1">Drawback 1</span>
+                            <span class="text-sm text-orange-800">Does not solve notifier duplication (spam).</span>
+                        </div>
+                        <div class="bg-white/60 p-3 rounded">
+                            <span class="font-bold text-orange-900 block mb-1">Drawback 2</span>
+                            <span class="text-sm text-orange-800">During Relay Proxy rolling updates, users are rebalanced, breaking consistency immediately.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- The Solution Section -->
+            <section class="mb-20">
+                <div class="flex items-center gap-3 mb-8">
+                    <div class="h-8 w-1 bg-green-500 rounded-full"></div>
+                    <h2 class="text-2xl font-bold text-slate-900">The Solution: Namespace Isolation</h2>
+                </div>
+
+                <p class="text-slate-600 mb-8 leading-relaxed">
+                    Since we cannot provide a central HA relay proxy, the architectural recommendation is to push the proxy closer to the application, typically at the <strong>Kubernetes Namespace</strong> level.
+                </p>
+
+                <!-- Solution Diagram -->
+                <div class="bg-slate-900 rounded-2xl p-8 text-white mb-8 shadow-xl">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+                        <!-- Namespace A -->
+                        <div class="relative border border-slate-700 rounded-xl p-6 bg-slate-800/50">
+                            <div class="absolute -top-3 left-4 bg-blue-600 text-xs font-bold px-3 py-1 rounded shadow-sm">NAMESPACE A</div>
+                            
+                            <div class="flex items-center gap-8">
+                                <!-- Apps -->
+                                <div class="flex flex-col gap-2">
+                                    <div class="bg-slate-700 p-2 rounded text-xs text-center border border-slate-600 w-24">App Pod 1</div>
+                                    <div class="bg-slate-700 p-2 rounded text-xs text-center border border-slate-600 w-24">App Pod 2</div>
+                                    <div class="bg-slate-700 p-2 rounded text-xs text-center border border-slate-600 w-24">App Pod 3</div>
+                                </div>
+
+                                <!-- Arrow -->
+                                <div class="text-slate-500"><i class="fa-solid fa-arrow-right"></i></div>
+
+                                <!-- Single Relay -->
+                                <div class="bg-green-600/20 border border-green-500/50 p-4 rounded-lg flex flex-col items-center gap-2 w-32">
+                                    <i class="fa-solid fa-server text-green-400 text-2xl"></i>
+                                    <span class="text-xs font-bold text-green-100 text-center">Relay Proxy<br>(Single Replica)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Namespace B -->
+                        <div class="relative border border-slate-700 rounded-xl p-6 bg-slate-800/50">
+                            <div class="absolute -top-3 left-4 bg-purple-600 text-xs font-bold px-3 py-1 rounded shadow-sm">NAMESPACE B</div>
+                            
+                            <div class="flex items-center gap-8">
+                                <!-- Apps -->
+                                <div class="flex flex-col gap-2">
+                                    <div class="bg-slate-700 p-2 rounded text-xs text-center border border-slate-600 w-24">App Pod 1</div>
+                                    <div class="bg-slate-700 p-2 rounded text-xs text-center border border-slate-600 w-24">App Pod 2</div>
+                                </div>
+
+                                <!-- Arrow -->
+                                <div class="text-slate-500"><i class="fa-solid fa-arrow-right"></i></div>
+
+                                <!-- Single Relay -->
+                                <div class="bg-green-600/20 border border-green-500/50 p-4 rounded-lg flex flex-col items-center gap-2 w-32">
+                                    <i class="fa-solid fa-server text-green-400 text-2xl"></i>
+                                    <span class="text-xs font-bold text-green-100 text-center">Relay Proxy<br>(Single Replica)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl border border-green-200 p-6 shadow-sm">
+                    <h3 class="text-lg font-bold text-slate-900 mb-4">Why this works</h3>
+                    <ul class="space-y-3">
+                        <li class="flex items-start gap-3">
+                            <i class="fa-solid fa-check-circle text-green-500 mt-1"></i>
+                            <span class="text-slate-600"><strong>Single Source of Truth:</strong> One proxy per namespace means consistent cache for all pods in that namespace.</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i class="fa-solid fa-check-circle text-green-500 mt-1"></i>
+                            <span class="text-slate-600"><strong>Correct Notifiers:</strong> Only one instance sends notifications, eliminating duplication.</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i class="fa-solid fa-check-circle text-green-500 mt-1"></i>
+                            <span class="text-slate-600"><strong>Blast Radius:</strong> Issues with feature flags are contained within the namespace.</span>
+                        </li>
+                    </ul>
+                </div>
+            </section>
+        </section>
+
+        <hr class="border-t border-slate-200 my-16">
+
+        <!-- ========================================== -->
+        <!-- API SECTION (from endpoints3.html)         -->
+        <!-- ========================================== -->
+        
+        <section id="api-reference">
+            <!-- Intro Section -->
+            <section id="intro" class="mb-12">
+                <div class="flex items-center gap-3 mb-6">
+                    <h1 class="text-4xl font-extrabold text-slate-900">Relay Proxy API</h1>
+                </div>
+
+                <p class="text-lg text-slate-600 leading-relaxed mb-4">
+                    The <span class="font-semibold text-slate-900">GoFeatureFlag Relay Proxy</span> acts as a centralized backend for your feature flag management. It bridges the gap between your configuration (file, S3, Kubernetes, etc.) and your applications, allowing you to evaluate flags remotely without embedding the logic or configuration directly into every service.
+                </p>
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r">
+                    <p class="text-sm text-yellow-800">
+                        This API is fully compatible with the 
+                        <a href="https://openfeature.dev" class="underline hover:text-yellow-900">OpenFeature</a> standard (OFREP), making it easy to use with any OpenFeature SDK.
+                    </p>
+                </div>
+            </section>
+
+            <!-- Table of Contents -->
+            <section class="mb-16 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-bold text-slate-900 mb-4 border-b border-slate-100 pb-2">Table of Contents</h2>
+                <div class="grid md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div class="space-y-2">
+                        <a href="#auth" class="block text-slate-600 hover:text-blue-600 hover:underline font-medium">Authentication</a>
+                        
+                        <div class="font-bold text-slate-900 mt-4 mb-1">Evaluation API</div>
+                        <a href="#allflags" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Evaluate All Flags <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+                        <a href="#eval-flag" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Evaluate Single Flag <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+                        <a href="#eval-collector" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Data Collector <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+
+                        <div class="font-bold text-slate-900 mt-4 mb-1">Real-time & Polling</div>
+                        <a href="#websocket" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Websocket (Diffs) <span class="text-[10px] font-mono bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded ml-1">WS</span></a>
+                        <a href="#poll-change" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Poll for Changes <span class="text-[10px] font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">GET</span></a>
+                        <a href="#poll-config" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Get Configuration <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="font-bold text-slate-900 mt-4 md:mt-0 mb-1">OFREP API (OpenFeature)</div>
+                        <a href="#ofrep-all" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Evaluate Bulk <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+                        <a href="#ofrep-single" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Evaluate Single <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+
+                        <div class="font-bold text-slate-900 mt-4 mb-1">Monitoring & Admin</div>
+                        <a href="#health" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Health Check <span class="text-[10px] font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">GET</span></a>
+                        <a href="#info" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">System Info <span class="text-[10px] font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">GET</span></a>
+                        <a href="#metrics" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Prometheus Metrics <span class="text-[10px] font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">GET</span></a>
+                        <a href="#pprof" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Profiling (pprof) <span class="text-[10px] font-mono bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1">GET</span></a>
+                        <a href="#refresh" class="block text-slate-600 hover:text-blue-600 hover:underline ml-2">Refresh Cache <span class="text-[10px] font-mono bg-green-100 text-green-700 px-1.5 py-0.5 rounded ml-1">POST</span></a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Authentication -->
+            <section id="auth" class="mb-16 border-b border-slate-200 pb-16">
+                <h2 class="text-2xl font-bold text-slate-900 mb-4">Authentication</h2>
+                <p class="text-slate-600 mb-4">
+                    If your Relay Proxy is configured with API keys (recommended for production), you must authenticate every request using the <code class="bg-slate-100 px-1 py-0.5 rounded text-sm font-mono">Authorization</code> header.
+                    <br><br>
+                    For the <strong>WebSocket</strong> endpoint, you must pass the key as a query parameter: <code class="bg-slate-100 px-1 py-0.5 rounded text-sm font-mono">?apiKey=YOUR_API_KEY</code>.
+                </p>
+                <div class="bg-slate-900 rounded-lg p-4 overflow-x-auto">
+                    <code class="text-green-400 font-mono text-sm">Authorization: Bearer &lt;YOUR_API_KEY&gt;</code>
+                </div>
+            </section>
+
+            <!-- Evaluation API -->
+            <div class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Evaluation API</h2>
+                <p class="text-slate-500 mb-8">Standard endpoints for evaluating flags using the GoFeatureFlag protocol.</p>
+
+                <!-- POST /v1/allflags -->
+                <div id="allflags" class="mb-16 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/v1/allflags</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Retrieves all flag variations for a specific user context. This is the primary endpoint used by client-side SDKs to "bootstrap" the application with the current state of all flags.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Request Body</h4>
+                            <pre><code class="language-json">{
+    "evaluationContext": {
+        "key": "user-unique-id-123",
+        "custom": {
+        "email": "jane@example.com",
+        "plan": "premium",
+        "version": "1.2.0"
+        }
+    }
+    }</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "flags": {
+        "new-checkout-flow": {
+        "value": true,
+        "variationType": "variation-A",
+        "trackEvents": true,
+        "timestamp": 1652113076,
+        "details": {}
+        },
+        "beta-feature": {
+        "value": false,
+        "variationType": "default",
+        "trackEvents": false,
+        "timestamp": 1652113076
+        }
+    },
+    "valid": true
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- POST /v1/feature/{key}/eval -->
+                <div id="eval-flag" class="mb-16 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/v1/feature/{flag_key}/eval</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Evaluates a single feature flag for a user. Useful for server-side checks where you only need one specific decision.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Request Body</h4>
+                            <pre><code class="language-json">{
+    "defaultValue": false,
+    "evaluationContext": {
+        "key": "user-unique-id-123",
+        "custom": {
+        "company": "Acme Corp"
+        }
+    }
+    }</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "trackEvents": true,
+    "variationType": "variation-B",
+    "failed": false,
+    "version": "",
+    "reason": "TARGETING_MATCH",
+    "errorCode": "",
+    "value": true,
+    "metadata": {}
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- POST /v1/data/collector -->
+                <div id="eval-collector" class="mb-16 scroll-mt-24 border-b border-slate-200 pb-16">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/v1/data/collector</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Collects usage events for data export. SDKs use this to send bulk events (like flag evaluations) to the Relay Proxy, which then forwards them to your configured data exporter (S3, Google Analytics, etc.).
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Request Body</h4>
+                            <pre><code class="language-json">{
+    "events": [
+        {
+        "kind": "feature",
+        "contextKind": "user",
+        "userKey": "123",
+        "creationDate": 1652113076,
+        "key": "my-flag",
+        "variation": "on",
+        "value": true,
+        "default": false
+        }
+    ],
+    "meta": {}
+    }</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "ingestedContentCount": 1
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time & Polling API -->
+            <div class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Real-time & Polling API</h2>
+                <p class="text-slate-500 mb-8">Endpoints to keep your local state synchronized with the Relay Proxy.</p>
+
+                <!-- WS /ws/v1/flag/change -->
+                <div id="websocket" class="mb-16 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-ws px-3 py-1 rounded-md text-sm font-bold font-mono">WS</span>
+                        <h3 class="text-xl font-mono text-slate-800">/ws/v1/flag/change</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Establishes a WebSocket connection to receive real-time notifications when the flag configuration changes. <br>
+                        This is highly efficient for clients that need to react instantly to updates without aggressive polling.
+                    </p>
+                    
+                    <div class="bg-purple-50 border border-purple-200 rounded p-3 mb-6">
+                        <p class="text-sm text-purple-800">
+                            <strong>Note:</strong> Since headers cannot be set easily in browser WebSocket APIs, pass your API key as a query parameter: <code class="font-mono">wss://host/ws/v1/flag/change?apiKey=YOUR_KEY</code>
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Message Received (On Change)</h4>
+                            <pre><code class="language-json">{
+    "added": {
+        "new-flag": {
+        "name": "new-flag",
+        "value": true,
+        "defValue": false
+        }
+    },
+    "deleted": {
+        "deprecated-flag": { ... }
+    },
+    "updated": {
+        "existing-flag": {
+        "old_value": { "value": false },
+        "new_value": { "value": true }
+        }
+    }
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GET /v1/flag/change -->
+                <div id="poll-change" class="mb-16 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-get px-3 py-1 rounded-md text-sm font-bold font-mono">GET</span>
+                        <h3 class="text-xl font-mono text-slate-800">/v1/flag/change</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Poller endpoint. Returns a hash of the current configuration. SDKs can poll this endpoint and compare the hash with their local version to decide if they need to fetch the full configuration.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Headers</h4>
+                            <div class="text-sm font-mono text-slate-700 bg-slate-100 p-2 rounded">
+                                If-None-Match: "previous-etag-hash"
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "hash": "117-0193435c612c50d93b798619d9464856...",
+    "flags": {
+        "flag-a": 1,
+        "flag-b": 0
+    }
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- POST /v1/flag/configuration -->
+                <div id="poll-config" class="mb-16 scroll-mt-24 border-b border-slate-200 pb-16">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/v1/flag/configuration</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Retrieves the raw configuration details for a specific list of flags. This is used by "local evaluation" SDKs that download rules and evaluate them locally, rather than calling the evaluation API for every check.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Request Body</h4>
+                            <pre><code class="language-json">{
+    "flags": [
+        "flag-key-1",
+        "flag-key-2"
+    ]
+    }</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "flags": {
+        "flag-key-1": {
+        "name": "flag-key-1",
+        "value": "variant-A",
+        "usage": "100%",
+        "defValue": "default"
+        }
+    },
+    "errorCode": "",
+    "errorDetails": ""
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OFREP API -->
+            <div class="mb-12">
+                <div class="flex items-center gap-3 mb-2">
+                    <h2 class="text-3xl font-bold text-slate-900">OFREP API</h2>
+                    <span class="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full font-bold">OpenFeature Standard</span>
+                </div>
+            
+                <p class="text-slate-500 mb-8">OpenFeature Remote Evaluation Protocol (OFREP) compatible endpoints.</p>
+
+                <!-- POST /ofrep/v1/evaluate/flags -->
+                <div id="ofrep-all" class="mb-16 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/ofrep/v1/evaluate/flags</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Bulk evaluation for OpenFeature. Returns evaluation details for all available flags or a filtered list if specified.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Request Body</h4>
+                            <pre><code class="language-json">{
+    "context": {
+        "targetingKey": "user-123",
+        "email": "user@test.com",
+        "role": "admin"
+    }
+    }</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "flags": [
+        {
+        "key": "show-banner",
+        "value": true,
+        "variant": "A",
+        "reason": "TARGETING_MATCH",
+        "metadata": {}
+        },
+        {
+        "key": "new-algo",
+        "value": false,
+        "variant": "control",
+        "reason": "DEFAULT",
+        "errorCode": null
+        }
+    ]
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- POST /ofrep/v1/evaluate/flags/{key} -->
+                <div id="ofrep-single" class="mb-16 scroll-mt-24 border-b border-slate-200 pb-16">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/ofrep/v1/evaluate/flags/{key}</h3>
+                    </div>
+                    <p class="text-slate-600 mb-6">
+                        Evaluate a specific flag using the OFREP standard structure.
+                    </p>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Request Body</h4>
+                            <pre><code class="language-json">{
+    "context": {
+        "targetingKey": "user-123",
+        "region": "us-east-1"
+    }
+    }</code></pre>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Response (200 OK)</h4>
+                            <pre><code class="language-json">{
+    "key": "my-flag",
+    "value": "blue",
+    "variant": "blue-button",
+    "reason": "STATIC",
+    "metadata": {
+        "description": "Button color test"
+    }
+    }</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monitoring & Admin -->
+            <div class="mb-12">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Monitoring & Admin</h2>
+                <p class="text-slate-500 mb-8">Endpoints for health checks, metrics, and administration.</p>
+
+                <!-- GET /health -->
+                <div id="health" class="mb-12 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-get px-3 py-1 rounded-md text-sm font-bold font-mono">GET</span>
+                        <h3 class="text-xl font-mono text-slate-800">/health</h3>
+                    </div>
+                    <p class="text-slate-600 mb-4">
+                        Liveness probe. Returns 200 OK if the Relay Proxy is running.
+                    </p>
+                    <pre><code class="language-json">{
+    "initialized": true
+    }</code></pre>
+                </div>
+
+                <!-- GET /info -->
+                <div id="info" class="mb-12 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-get px-3 py-1 rounded-md text-sm font-bold font-mono">GET</span>
+                        <h3 class="text-xl font-mono text-slate-800">/info</h3>
+                    </div>
+                    <p class="text-slate-600 mb-4">
+                        Returns information about the current state of the proxy, including cache refresh timestamps.
+                    </p>
+                    <pre><code class="language-json">{
+    "cacheRefresh": "2023-10-27T10:00:00Z",
+    "flagsets": {
+        "default": "2023-10-27T10:00:00Z"
+    }
+    }</code></pre>
+                </div>
+
+                <!-- GET /metrics -->
+                <div id="metrics" class="mb-12 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-get px-3 py-1 rounded-md text-sm font-bold font-mono">GET</span>
+                        <h3 class="text-xl font-mono text-slate-800">/metrics</h3>
+                    </div>
+                    <p class="text-slate-600 mb-4">
+                        Exposes standard Prometheus metrics. Use this endpoint to scrape metrics into your monitoring system (Grafana/Prometheus).
+                    </p>
+                    <div class="bg-slate-900 text-gray-300 p-4 rounded-lg font-mono text-sm">
+                        # HELP go_gc_duration_seconds A summary of the pause duration of garbage collection cycles.<br>
+                        # TYPE go_gc_duration_seconds summary<br>
+                        go_gc_duration_seconds{quantile="0"} 0.0000345<br>
+                        ...
+                    </div>
+                </div>
+
+                <!-- GET /debug/pprof/ -->
+                <div id="pprof" class="mb-12 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-get px-3 py-1 rounded-md text-sm font-bold font-mono">GET</span>
+                        <h3 class="text-xl font-mono text-slate-800">/debug/pprof/</h3>
+                    </div>
+                    <p class="text-slate-600 mb-4">
+                        Standard Go pprof profiling endpoint. Used for debugging and performance profiling (CPU, Heap, etc.).
+                        Available only if enabled in configuration.
+                    </p>
+                    <div class="bg-yellow-50 text-yellow-800 p-3 rounded-md text-sm">
+                        <strong>Note:</strong> Not part of the swagger spec, but available when <code>enablePprof: true</code> is set.
+                    </div>
+                </div>
+
+                <!-- POST /admin/v1/retriever/refresh -->
+                <div id="refresh" class="mb-12 scroll-mt-24">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="method-post px-3 py-1 rounded-md text-sm font-bold font-mono">POST</span>
+                        <h3 class="text-xl font-mono text-slate-800">/admin/v1/retriever/refresh</h3>
+                    </div>
+                    <p class="text-slate-600 mb-4">
+                        Forces a refresh of the feature flags from the configuration source. Useful if you've updated your config file/S3 bucket and want the proxy to pick it up immediately without waiting for the polling interval.
+                    </p>
+                    <pre><code class="language-json">{
+    "refreshed": true
+    }</code></pre>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-50 border-t border-slate-200 mt-12 py-12">
+        <div class="max-w-4xl mx-auto px-4 text-center text-slate-500 text-sm">
+            <p>&copy; 2024 Architecture Documentation. Built for Go Feature Flag users.</p>
+        </div>
+    </footer>
+
+    <script>
+        hljs.highlightAll();
+    </script>
+
+</body>
+</html>
